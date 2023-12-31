@@ -34,6 +34,9 @@
 (require 'project)
 ;; (require 'consult)
 
+(eval-when-compile
+  (require 'subr-x))
+
 (defvar proyekt-cache (make-hash-table :test #'equal))
 
 (cl-defun proyekt-add-command-set (name &key items items-fn predicate)
