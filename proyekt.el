@@ -68,9 +68,9 @@
         (and (stringp action) (format "(%s)" action)))))
 
 (defun proyekt-make-source (name command-set)
-  (when-let (((funcall (plist-get command-set :predicate)))
-             (items (funcall (plist-get command-set :items)))
-             (root default-directory))
+  (when-let* (((funcall (plist-get command-set :predicate)))
+              (items (funcall (plist-get command-set :items)))
+              (root default-directory))
     (list
      :category nil
      :items (seq-map (lambda (command) (plist-get command :name)) items)
@@ -92,7 +92,7 @@
 ;;;###autoload
 (defun proyekt-run ()
   (interactive)
-  (when-let (root (project-root (project-current t)))
+  (when-let* ((root (project-root (project-current t))))
     (require 'consult)
     (consult--multi (proyekt-sources root))))
 
@@ -152,6 +152,7 @@
           (:name "release build" :action "cargo build --release")
           (:name "run benchmarks" :action "cargo bench")
           (:name "update dependencies" :action "cargo update")
+          (:name "show outdated dependencies" :action "cargo outdated")
           (:name "run" :action "cargo run")
           (:name "check & report errors" :action "cargo check")
           (:name "remove 'target' directory" :action "cargo clean"))
