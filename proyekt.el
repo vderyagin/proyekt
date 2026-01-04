@@ -37,6 +37,56 @@
 (eval-when-compile
   (require 'subr-x))
 
+(defun proyekt--just-format-param (param)
+  (let* ((name (map-elt param "name"))
+         (default (map-elt param "default"))
+         (kind (map-elt param "kind")))
+    (concat
+     (pcase kind
+       ("star" "*")
+       ("plus" "+")
+       (_ ""))
+     name
+     (when (stringp default)
+       (format "=%s" (if (string-empty-p default) "''" (prin1-to-string default)))))))
+
+(defun proyekt--just-format-recipe-name (recipe)
+  (let ((namepath (map-elt recipe "namepath"))
+        (params (map-elt recipe "parameters")))
+    (if (seq-empty-p params)
+        namepath
+      (concat namepath " " (string-join (seq-map #'proyekt--just-format-param params) " ")))))
+
+(defun proyekt--just-collect-recipes (data flags)
+  (let ((recipes (map-elt data "recipes"))
+        (modules (map-elt data "modules"))
+        (result nil))
+    (map-do
+     (lambda (_name recipe)
+       (unless (eq (map-elt recipe "private") t)
+         (let* ((namepath (map-elt recipe "namepath"))
+                (doc (map-elt recipe "doc"))
+                (display-name (proyekt--just-format-recipe-name recipe)))
+           (push (list :name display-name
+                       :description (and (stringp doc) doc)
+                       :action (format "just%s %s" flags namepath))
+                 result))))
+     recipes)
+    (map-do
+     (lambda (_name submodule)
+       (setq result (nconc (proyekt--just-collect-recipes submodule flags) result)))
+     modules)
+    result))
+
+(defun proyekt--just-parse-recipes (&rest flags)
+  (let* ((cmd (string-join (append '("just" "--dump" "--dump-format" "json") flags) " "))
+         (json-str (shell-command-to-string cmd))
+         (data (json-parse-string json-str))
+         (flag-str (if flags (concat " " (string-join flags " ")) "")))
+    (seq-sort-by (lambda (item) (plist-get item :name))
+                 #'string<
+                 (proyekt--just-collect-recipes data flag-str))))
+
 (defvar proyekt-cache (make-hash-table :test #'equal))
 
 (cl-defun proyekt-add-command-set (name &key items items-fn predicate)
@@ -72,7 +122,6 @@
               (items (funcall (plist-get command-set :items)))
               (root default-directory))
     (list
-     :category nil
      :items (seq-map (lambda (command) (plist-get command :name)) items)
      :name name
      :annotate (lambda (name)
@@ -94,7 +143,7 @@
   (interactive)
   (when-let* ((root (project-root (project-current t))))
     (require 'consult)
-    (consult--multi (proyekt-sources root))))
+    (consult--multi (proyekt-sources root) :sort nil)))
 
 (proyekt-add-command-set
  "Gentoo overlay"
@@ -129,21 +178,18 @@
 
 (proyekt-add-command-set
  "Just"
- :items-fn (lambda ()
-             (seq-map
-              (lambda (c)
-                (let ((results (split-string c "#" t (rx (+ space)))))
-                  (list
-                   :name (car results)
-                   :description (cadr results)
-                   :action (format "just %s" (car (split-string (car results) " " t))))))
-              (string-lines (shell-command-to-string "just --list --list-prefix '' --list-heading ''") t)))
+ :items-fn #'proyekt--just-parse-recipes
  :predicate
  (lambda ()
    (and (executable-find "just")
         (or (file-regular-p "Justfile")
             (file-regular-p ".justfile")
             (file-regular-p "justfile")))))
+
+(proyekt-add-command-set
+ "Just (global)"
+ :items-fn (lambda () (proyekt--just-parse-recipes "--global-justfile"))
+ :predicate (lambda () (executable-find "just")))
 
 (proyekt-add-command-set
  "Cargo"
