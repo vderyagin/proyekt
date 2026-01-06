@@ -189,7 +189,16 @@
 (proyekt-add-command-set
  "Just (global)"
  :items-fn (lambda () (proyekt--just-parse-recipes "--global-justfile"))
- :predicate (lambda () (executable-find "just")))
+ :predicate
+ (lambda ()
+   (and (executable-find "just")
+        (seq-some
+         #'file-regular-p
+         (list
+          (expand-file-name "just/justfile" (or (getenv "XDG_CONFIG_HOME") "~/.config"))
+          "~/.config/just/justfile"
+          "~/justfile"
+          "~/.justfile")))))
 
 (proyekt-add-command-set
  "Cargo"
