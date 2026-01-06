@@ -327,21 +327,24 @@
    (and (executable-find "srb")
         (file-regular-p "sorbet/config"))))
 
+(defun proyekt--rake-parse-tasks (&rest flags)
+  (let* ((cmd (string-join (append '("rake" "--all" "--tasks") flags) " "))
+         (flag-str (if flags (concat " " (string-join flags " ")) "")))
+    (seq-map
+     (lambda (line)
+       (let* ((parts (split-string line "#" t (rx (+ space))))
+              (task (string-trim (string-remove-prefix "rake " (car parts))))
+              (task-name (car (split-string task "\\[" t)))
+              (desc (cadr parts)))
+         (list
+          :name task
+          :description (and desc (format "(%s)" desc))
+          :action (format "rake%s %s" flag-str task-name))))
+     (string-lines (shell-command-to-string cmd) t))))
+
 (proyekt-add-command-set
  "Rake"
- :items-fn
- (lambda ()
-   (seq-map
-    (lambda (line)
-      (let* ((parts (split-string line "#" t (rx (+ space))))
-             (task (string-trim (string-remove-prefix "rake " (car parts))))
-             (task-name (car (split-string task "\\[" t)))
-             (desc (cadr parts)))
-        (list
-         :name task
-         :description (and desc (format "(%s)" desc))
-         :action (format "rake %s" task-name))))
-    (string-lines (shell-command-to-string "rake --all --tasks") t)))
+ :items-fn #'proyekt--rake-parse-tasks
  :predicate
  (lambda ()
    (and (executable-find "rake")
@@ -349,5 +352,13 @@
             (file-regular-p "rakefile")
             (file-regular-p "Rakefile.rb")
             (file-regular-p "rakefile.rb")))))
+
+(proyekt-add-command-set
+ "Rake (global)"
+ :items-fn (lambda () (proyekt--rake-parse-tasks "--system"))
+ :predicate
+ (lambda ()
+   (and (executable-find "rake")
+        (file-expand-wildcards "~/.rake/*.rake"))))
 
 ;;; proyekt.el ends here
