@@ -1,11 +1,11 @@
 ;;; proyekt.el --- Project-related helpers -*- lexical-binding: t -*-
 
-;; Copyright (C) 2023 Victor Deryagin
+;; Copyright (C) 2023-2026 Victor Deryagin
 
 ;; Author: Victor Deryagin <vderyagin@gmail.com>
 ;; Maintainer: Victor Deryagin <vderyagin@gmail.com>
 ;; Created: 16 Dec 2023
-;; Version: 0.1.0
+;; Version: 0.2.0
 
 ;; Package-Requires: ((consult))
 
