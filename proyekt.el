@@ -184,6 +184,7 @@
  :predicate
  (lambda ()
    (and (executable-find "just")
+        (not (file-equal-p default-directory "~/"))
         (or (file-regular-p "Justfile")
             (file-regular-p ".justfile")
             (file-regular-p "justfile")))))
