@@ -141,7 +141,9 @@
 ;;;###autoload
 (defun proyekt-run ()
   (interactive)
-  (when-let* ((root (project-root (project-current t))))
+  (let ((root (if-let* ((project (project-current)))
+                  (project-root project)
+                default-directory)))
     (require 'consult)
     (consult--multi (proyekt-sources root) :sort nil)))
 
