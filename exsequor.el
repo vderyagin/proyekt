@@ -108,6 +108,7 @@
 (defvar exsequor-minibuffer-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-a") #'exsequor-toggle-show-hidden)
+    (define-key map (kbd "M-.") #'exsequor-jump-to-definition)
     map))
 
 (cl-defun exsequor-add-command-set (name &key items items-fn predicate global)
@@ -139,6 +140,40 @@
     (or desc
         (and (stringp action) (format "(%s)" action)))))
 
+(defun exsequor--source-location-marker (cand)
+  (when-let* ((file (get-text-property 0 'exsequor-source-file cand))
+              (line (get-text-property 0 'exsequor-source-line cand))
+              ((file-exists-p file)))
+    (with-current-buffer (find-file-noselect file)
+      (save-excursion
+        (goto-char (point-min))
+        (forward-line (1- line))
+        (point-marker)))))
+
+(defun exsequor--source-preview ()
+  (let ((preview (consult--jump-preview)))
+    (lambda (action cand)
+      (funcall preview action (and cand (exsequor--source-location-marker (car cand)))))))
+
+(defun exsequor--get-current-candidate ()
+  (run-hook-with-args-until-success 'consult--completion-candidate-hook))
+
+(defun exsequor-jump-to-definition ()
+  (interactive)
+  (if-let* ((cand (exsequor--get-current-candidate))
+            (file (get-text-property 0 'exsequor-source-file cand))
+            (line (get-text-property 0 'exsequor-source-line cand)))
+      (progn
+        (run-at-time 0 nil
+                     (lambda ()
+                       (find-file file)
+                       (goto-char (point-min))
+                       (forward-line (1- line))
+                       (recenter)
+                       (pulse-momentary-highlight-one-line (point))))
+        (abort-recursive-edit))
+    (message "No source location available for this command")))
+
 (defun exsequor-make-source (name command-set)
   (when-let* (((funcall (plist-get command-set :predicate)))
               (items (funcall (plist-get command-set :items)))
@@ -146,9 +181,15 @@
     (list
      :items (seq-map
              (lambda (command)
-               (let ((item-name (plist-get command :name)))
+               (let ((item-name (plist-get command :name))
+                     (source-file (plist-get command :source-file))
+                     (source-line (plist-get command :source-line)))
                  (when (plist-get command :hidden)
                    (put-text-property 0 (length item-name) 'exsequor-hidden t item-name))
+                 (when source-file
+                   (put-text-property 0 (length item-name) 'exsequor-source-file source-file item-name))
+                 (when source-line
+                   (put-text-property 0 (length item-name) 'exsequor-source-line source-line item-name))
                  item-name))
              items)
      :name name
@@ -173,7 +214,7 @@
     (seq-filter #'identity)))
 
 ;;;###autoload
-(defun exsequor-run-inp-project ()
+(defun exsequor-run-in-project ()
   (interactive)
   (let ((root (if-let* ((project (project-current)))
                   (project-root project)
@@ -181,7 +222,9 @@
     (consult--multi (exsequor-sources root)
                     :sort nil
                     :keymap exsequor-minibuffer-map
-                    :predicate #'exsequor--candidate-visible-p)))
+                    :predicate #'exsequor--candidate-visible-p
+                    :state (exsequor--source-preview)
+                    :preview-key "M-p")))
 
 ;;;###autoload
 (defun exsequor-run-global ()
@@ -189,7 +232,9 @@
   (consult--multi (exsequor-sources-global)
                   :sort nil
                   :keymap exsequor-minibuffer-map
-                  :predicate #'exsequor--candidate-visible-p))
+                  :predicate #'exsequor--candidate-visible-p
+                  :state (exsequor--source-preview)
+                  :preview-key "M-o"))
 
 (exsequor-add-command-set
  "Gentoo overlay"
@@ -373,20 +418,42 @@
    (and (executable-find "srb")
         (file-regular-p "sorbet/config"))))
 
+(defun exsequor--rake-parse-where (&rest flags)
+  (let ((cmd (string-join (append '("rake" "--where" "--all") flags) " ")))
+    (seq-reduce
+     (lambda (acc line)
+       (when (string-match
+              (rx "rake " (group (+ (not space))) (+ space)
+                  (group (+? nonl)) ":" (group (+ digit)) ":in")
+              line)
+         (let ((raw-task (match-string 1 line))
+               (file (match-string 2 line))
+               (line-num (string-to-number (match-string 3 line))))
+           (push (cons (car (split-string raw-task "\\[" t))
+                       (cons file line-num))
+                 acc)))
+       acc)
+     (string-lines (shell-command-to-string cmd) t)
+     nil)))
+
 (defun exsequor--rake-parse-tasks (&rest flags)
   (let* ((cmd (string-join (append '("rake" "--all" "--tasks") flags) " "))
-         (flag-str (if flags (concat " " (string-join flags " ")) "")))
+         (flag-str (if flags (concat " " (string-join flags " ")) ""))
+         (locations (apply #'exsequor--rake-parse-where flags)))
     (seq-map
      (lambda (line)
        (let* ((parts (split-string line "#" t (rx (+ space))))
               (task (string-trim (string-remove-prefix "rake " (car parts))))
               (task-name (car (split-string task "\\[" t)))
-              (desc (cadr parts)))
+              (desc (cadr parts))
+              (loc (cdr (assoc task-name locations))))
          (list
           :name task
           :description (and desc (format "(%s)" desc))
           :action (format "rake%s %s" flag-str task-name)
-          :hidden (not desc))))
+          :hidden (not desc)
+          :source-file (car loc)
+          :source-line (cdr loc))))
      (seq-filter
       (lambda (line) (string-prefix-p "rake " line))
       (string-lines (shell-command-to-string cmd) t)))))
