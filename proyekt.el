@@ -63,14 +63,15 @@
         (result nil))
     (map-do
      (lambda (_name recipe)
-       (unless (eq (map-elt recipe "private") t)
-         (let* ((namepath (map-elt recipe "namepath"))
-                (doc (map-elt recipe "doc"))
-                (display-name (proyekt--just-format-recipe-name recipe)))
-           (push (list :name display-name
-                       :description (and (stringp doc) doc)
-                       :action (format "just%s %s" flags namepath))
-                 result))))
+       (let* ((namepath (map-elt recipe "namepath"))
+              (doc (map-elt recipe "doc"))
+              (private (eq (map-elt recipe "private") t))
+              (display-name (proyekt--just-format-recipe-name recipe)))
+         (push (list :name display-name
+                     :description (and (stringp doc) doc)
+                     :action (format "just%s %s" flags namepath)
+                     :hidden private)
+               result)))
      recipes)
     (map-do
      (lambda (_name submodule)
@@ -88,6 +89,26 @@
                  (proyekt--just-collect-recipes data flag-str))))
 
 (defvar proyekt-cache (make-hash-table :test #'equal))
+
+(defvar-local proyekt--show-hidden nil
+  "When non-nil, show hidden tasks in completion.")
+
+(defun proyekt--candidate-visible-p (cand)
+  (or proyekt--show-hidden
+      (not (get-text-property 0 'proyekt-hidden cand))))
+
+(defun proyekt-toggle-show-hidden ()
+  (interactive)
+  (setq proyekt--show-hidden (not proyekt--show-hidden))
+  (message (if proyekt--show-hidden
+               "Showing all tasks"
+             "Showing only public tasks"))
+  (run-hooks 'consult--completion-refresh-hook))
+
+(defvar proyekt-minibuffer-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-a") #'proyekt-toggle-show-hidden)
+    map))
 
 (cl-defun proyekt-add-command-set (name &key items items-fn predicate global)
   (cl-assert (and (xor (and items (listp items))
@@ -123,7 +144,13 @@
               (items (funcall (plist-get command-set :items)))
               (root default-directory))
     (list
-     :items (seq-map (lambda (command) (plist-get command :name)) items)
+     :items (seq-map
+             (lambda (command)
+               (let ((item-name (plist-get command :name)))
+                 (when (plist-get command :hidden)
+                   (put-text-property 0 (length item-name) 'proyekt-hidden t item-name))
+                 item-name))
+             items)
      :name name
      :annotate (lambda (name)
                  (proyekt-annotate (proyekt-lookup-command items name)))
@@ -151,12 +178,18 @@
   (let ((root (if-let* ((project (project-current)))
                   (project-root project)
                 default-directory)))
-    (consult--multi (proyekt-sources root) :sort nil)))
+    (consult--multi (proyekt-sources root)
+                    :sort nil
+                    :keymap proyekt-minibuffer-map
+                    :predicate #'proyekt--candidate-visible-p)))
 
 ;;;###autoload
 (defun proyekt-run-global ()
   (interactive)
-  (consult--multi (proyekt-sources-global) :sort nil))
+  (consult--multi (proyekt-sources-global)
+                  :sort nil
+                  :keymap proyekt-minibuffer-map
+                  :predicate #'proyekt--candidate-visible-p))
 
 (proyekt-add-command-set
  "Gentoo overlay"
