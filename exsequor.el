@@ -224,7 +224,7 @@
                     :keymap exsequor-minibuffer-map
                     :predicate #'exsequor--candidate-visible-p
                     :state (exsequor--source-preview)
-                    :preview-key "M-p")))
+                    :preview-key "M-o")))
 
 ;;;###autoload
 (defun exsequor-run-global ()
