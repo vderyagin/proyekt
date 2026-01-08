@@ -23,8 +23,9 @@ Built-in support for common build tools and task runners. Extensible via `exsequ
 Requires [Eldev](https://github.com/emacs-eldev/eldev) for development.
 
 ```sh
-eldev prepare
-eldev compile
+eldev prepare  # install dependencies
+eldev compile  # compile elisp
+eldev test     # run tests
 ```
 
 ## Usage
