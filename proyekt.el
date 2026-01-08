@@ -411,4 +411,6 @@
    (and (executable-find "rake")
         (file-expand-wildcards "~/.rake/*.rake"))))
 
+(provide 'proyekt)
+
 ;;; proyekt.el ends here
