@@ -418,45 +418,45 @@
    (and (executable-find "srb")
         (file-regular-p "sorbet/config"))))
 
+(defun exsequor--rake-strip-args (task-name)
+  (car (split-string task-name "\\[" t)))
+
 (defun exsequor--rake-parse-where (&rest flags)
-  (let ((cmd (string-join (append '("rake" "--where" "--all") flags) " ")))
-    (seq-reduce
-     (lambda (acc line)
-       (when (string-match
-              (rx "rake " (group (+ (not space))) (+ space)
-                  (group (+? nonl)) ":" (group (+ digit)) ":in")
-              line)
-         (let ((raw-task (match-string 1 line))
-               (file (match-string 2 line))
-               (line-num (string-to-number (match-string 3 line))))
-           (push (cons (car (split-string raw-task "\\[" t))
-                       (cons file line-num))
-                 acc)))
-       acc)
-     (string-lines (shell-command-to-string cmd) t)
-     nil)))
+  (let ((cmd (string-join (append '("rake" "--where" "--all") flags) " "))
+        (rx (rx "rake " (group (+ (not space))) (+ space)
+                (group (+? nonl)) ":" (group (+ digit)) ":in")))
+    (thread-last
+      (shell-command-to-string cmd)
+      string-lines
+      (seq-keep
+       (lambda (line)
+         (when (string-match rx line)
+           (cons (exsequor--rake-strip-args (match-string 1 line))
+                 (cons (match-string 2 line)
+                       (string-to-number (match-string 3 line))))))))))
 
 (defun exsequor--rake-parse-tasks (&rest flags)
   (let* ((cmd (string-join (append '("rake" "--all" "--tasks") flags) " "))
          (flag-str (if flags (concat " " (string-join flags " ")) ""))
          (locations (apply #'exsequor--rake-parse-where flags)))
-    (seq-map
-     (lambda (line)
-       (let* ((parts (split-string line "#" t (rx (+ space))))
-              (task (string-trim (string-remove-prefix "rake " (car parts))))
-              (task-name (car (split-string task "\\[" t)))
-              (desc (cadr parts))
-              (loc (cdr (assoc task-name locations))))
-         (list
-          :name task
-          :description (and desc (format "(%s)" desc))
-          :action (format "rake%s %s" flag-str task-name)
-          :hidden (not desc)
-          :source-file (car loc)
-          :source-line (cdr loc))))
-     (seq-filter
-      (lambda (line) (string-prefix-p "rake " line))
-      (string-lines (shell-command-to-string cmd) t)))))
+    (thread-last
+      (shell-command-to-string cmd)
+      string-lines
+      (seq-filter (lambda (line) (string-prefix-p "rake " line)))
+      (seq-map
+       (lambda (line)
+         (let* ((parts (split-string line "#" t (rx (+ space))))
+                (task (string-trim (string-remove-prefix "rake " (car parts))))
+                (task-name (exsequor--rake-strip-args task))
+                (desc (cadr parts))
+                (loc (cdr (assoc task-name locations))))
+           (list
+            :name task
+            :description (and desc (format "(%s)" desc))
+            :action (format "rake%s %s" flag-str task-name)
+            :hidden (not desc)
+            :source-file (car loc)
+            :source-line (cdr loc))))))))
 
 (exsequor-add-command-set
  "Rake"
