@@ -431,9 +431,11 @@
       (seq-keep
        (lambda (line)
          (when (string-match rx line)
-           (cons (exsequor--rake-strip-args (match-string 1 line))
-                 (cons (match-string 2 line)
-                       (string-to-number (match-string 3 line))))))))))
+           (let ((raw-task (match-string 1 line))
+                 (file (match-string 2 line))
+                 (line-num (string-to-number (match-string 3 line))))
+             (cons (exsequor--rake-strip-args raw-task)
+                   (cons file line-num)))))))))
 
 (defun exsequor--rake-parse-tasks (&rest flags)
   (let* ((cmd (string-join (append '("rake" "--all" "--tasks") flags) " "))
