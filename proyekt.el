@@ -385,8 +385,11 @@
          (list
           :name task
           :description (and desc (format "(%s)" desc))
-          :action (format "rake%s %s" flag-str task-name))))
-     (string-lines (shell-command-to-string cmd) t))))
+          :action (format "rake%s %s" flag-str task-name)
+          :hidden (not desc))))
+     (seq-filter
+      (lambda (line) (string-prefix-p "rake " line))
+      (string-lines (shell-command-to-string cmd) t)))))
 
 (proyekt-add-command-set
  "Rake"
