@@ -28,6 +28,17 @@ eldev compile  # compile elisp
 eldev test     # run tests
 ```
 
+Example configuration with `use-package` and `straight.el`:
+
+```elisp
+(use-package exsequor
+  :straight (:host github :repo "vderyagin/exsequor")
+  :after project
+  :bind ("C-c r" . exsequor-run-global)
+  :bind (:map project-prefix-map
+              ("C-c C-c" . exsequor-run-in-project)))
+```
+
 ## Usage
 
 ```elisp
