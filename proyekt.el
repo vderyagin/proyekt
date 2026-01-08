@@ -32,7 +32,7 @@
 
 (require 'map)
 (require 'project)
-;; (require 'consult)
+(require 'consult)
 
 (eval-when-compile
   (require 'subr-x))
@@ -89,7 +89,7 @@
 
 (defvar proyekt-cache (make-hash-table :test #'equal))
 
-(cl-defun proyekt-add-command-set (name &key items items-fn predicate)
+(cl-defun proyekt-add-command-set (name &key items items-fn predicate global)
   (cl-assert (and (xor (and items (listp items))
                        (functionp items-fn))
                   (functionp predicate)
@@ -97,7 +97,8 @@
   (map-put! proyekt-cache name
             (list
              :items (or items-fn (lambda () items))
-             :predicate predicate)))
+             :predicate predicate
+             :global global)))
 
 (defun proyekt-lookup-command (candidates name)
   (seq-find
@@ -137,15 +138,25 @@
       (map-apply #'proyekt-make-source)
       (seq-filter #'identity))))
 
-(declare-function consult--multi "consult")
+(defun proyekt-sources-global ()
+  (thread-last
+    proyekt-cache
+    (map-filter (lambda (_name command-set) (plist-get command-set :global)))
+    (map-apply #'proyekt-make-source)
+    (seq-filter #'identity)))
+
 ;;;###autoload
 (defun proyekt-run ()
   (interactive)
   (let ((root (if-let* ((project (project-current)))
                   (project-root project)
                 default-directory)))
-    (require 'consult)
     (consult--multi (proyekt-sources root) :sort nil)))
+
+;;;###autoload
+(defun proyekt-run-global ()
+  (interactive)
+  (consult--multi (proyekt-sources-global) :sort nil))
 
 (proyekt-add-command-set
  "Gentoo overlay"
@@ -192,6 +203,7 @@
 (proyekt-add-command-set
  "Just (global)"
  :items-fn (lambda () (proyekt--just-parse-recipes "--global-justfile"))
+ :global t
  :predicate
  (lambda ()
    (and (executable-find "just")
@@ -357,6 +369,7 @@
 (proyekt-add-command-set
  "Rake (global)"
  :items-fn (lambda () (proyekt--rake-parse-tasks "--system"))
+ :global t
  :predicate
  (lambda ()
    (and (executable-find "rake")
