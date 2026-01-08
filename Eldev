@@ -3,4 +3,4 @@
 (eldev-use-package-archive 'gnu)
 (eldev-use-package-archive 'melpa)
 
-(setf eldev-project-main-file "proyekt.el")
+(setf eldev-project-main-file "exsequor.el")

@@ -1,4 +1,4 @@
-;;; proyekt.el --- Project-related helpers -*- lexical-binding: t -*-
+;;; exsequor.el --- Run tasks in project and outside of it -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2023-2026 Victor Deryagin
 
@@ -37,7 +37,7 @@
 (eval-when-compile
   (require 'subr-x))
 
-(defun proyekt--just-format-param (param)
+(defun exsequor--just-format-param (param)
   (let* ((name (map-elt param "name"))
          (default (map-elt param "default"))
          (kind (map-elt param "kind")))
@@ -50,14 +50,14 @@
      (when (stringp default)
        (format "=%s" (if (string-empty-p default) "''" (prin1-to-string default)))))))
 
-(defun proyekt--just-format-recipe-name (recipe)
+(defun exsequor--just-format-recipe-name (recipe)
   (let ((namepath (map-elt recipe "namepath"))
         (params (map-elt recipe "parameters")))
     (if (seq-empty-p params)
         namepath
-      (concat namepath " " (string-join (seq-map #'proyekt--just-format-param params) " ")))))
+      (concat namepath " " (string-join (seq-map #'exsequor--just-format-param params) " ")))))
 
-(defun proyekt--just-collect-recipes (data flags)
+(defun exsequor--just-collect-recipes (data flags)
   (let ((recipes (map-elt data "recipes"))
         (modules (map-elt data "modules"))
         (result nil))
@@ -66,7 +66,7 @@
        (let* ((namepath (map-elt recipe "namepath"))
               (doc (map-elt recipe "doc"))
               (private (eq (map-elt recipe "private") t))
-              (display-name (proyekt--just-format-recipe-name recipe)))
+              (display-name (exsequor--just-format-recipe-name recipe)))
          (push (list :name display-name
                      :description (and (stringp doc) doc)
                      :action (format "just%s %s" flags namepath)
@@ -75,71 +75,71 @@
      recipes)
     (map-do
      (lambda (_name submodule)
-       (setq result (nconc (proyekt--just-collect-recipes submodule flags) result)))
+       (setq result (nconc (exsequor--just-collect-recipes submodule flags) result)))
      modules)
     result))
 
-(defun proyekt--just-parse-recipes (&rest flags)
+(defun exsequor--just-parse-recipes (&rest flags)
   (let* ((cmd (string-join (append '("just" "--dump" "--dump-format" "json") flags) " "))
          (json-str (shell-command-to-string cmd))
          (data (json-parse-string json-str))
          (flag-str (if flags (concat " " (string-join flags " ")) "")))
     (seq-sort-by (lambda (item) (plist-get item :name))
                  #'string<
-                 (proyekt--just-collect-recipes data flag-str))))
+                 (exsequor--just-collect-recipes data flag-str))))
 
-(defvar proyekt-cache (make-hash-table :test #'equal))
+(defvar exsequor-cache (make-hash-table :test #'equal))
 
-(defvar-local proyekt--show-hidden nil
+(defvar-local exsequor--show-hidden nil
   "When non-nil, show hidden tasks in completion.")
 
-(defun proyekt--candidate-visible-p (cand)
-  (or proyekt--show-hidden
-      (not (get-text-property 0 'proyekt-hidden cand))))
+(defun exsequor--candidate-visible-p (cand)
+  (or exsequor--show-hidden
+      (not (get-text-property 0 'exsequor-hidden cand))))
 
-(defun proyekt-toggle-show-hidden ()
+(defun exsequor-toggle-show-hidden ()
   (interactive)
-  (setq proyekt--show-hidden (not proyekt--show-hidden))
-  (message (if proyekt--show-hidden
+  (setq exsequor--show-hidden (not exsequor--show-hidden))
+  (message (if exsequor--show-hidden
                "Showing all tasks"
              "Showing only public tasks"))
   (run-hooks 'consult--completion-refresh-hook))
 
-(defvar proyekt-minibuffer-map
+(defvar exsequor-minibuffer-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-a") #'proyekt-toggle-show-hidden)
+    (define-key map (kbd "C-c C-a") #'exsequor-toggle-show-hidden)
     map))
 
-(cl-defun proyekt-add-command-set (name &key items items-fn predicate global)
+(cl-defun exsequor-add-command-set (name &key items items-fn predicate global)
   (cl-assert (and (xor (and items (listp items))
                        (functionp items-fn))
                   (functionp predicate)
                   (stringp name)))
-  (map-put! proyekt-cache name
+  (map-put! exsequor-cache name
             (list
              :items (or items-fn (lambda () items))
              :predicate predicate
              :global global)))
 
-(defun proyekt-lookup-command (candidates name)
+(defun exsequor-lookup-command (candidates name)
   (seq-find
    (lambda (candidate) (string= (plist-get candidate :name) name))
    candidates))
 
-(defun proyekt-run-command (command)
+(defun exsequor-run-command (command)
   (let ((action (plist-get command :action)))
     (funcall (pcase-exhaustive action
                ((pred stringp) #'compile)
                ((pred functionp) #'funcall))
              action)))
 
-(defun proyekt-annotate (command)
+(defun exsequor-annotate (command)
   (let ((desc (plist-get command :description))
         (action (plist-get command :action)))
     (or desc
         (and (stringp action) (format "(%s)" action)))))
 
-(defun proyekt-make-source (name command-set)
+(defun exsequor-make-source (name command-set)
   (when-let* (((funcall (plist-get command-set :predicate)))
               (items (funcall (plist-get command-set :items)))
               (root default-directory))
@@ -148,50 +148,50 @@
              (lambda (command)
                (let ((item-name (plist-get command :name)))
                  (when (plist-get command :hidden)
-                   (put-text-property 0 (length item-name) 'proyekt-hidden t item-name))
+                   (put-text-property 0 (length item-name) 'exsequor-hidden t item-name))
                  item-name))
              items)
      :name name
      :annotate (lambda (name)
-                 (proyekt-annotate (proyekt-lookup-command items name)))
+                 (exsequor-annotate (exsequor-lookup-command items name)))
      :action (lambda (name)
                (let ((default-directory root))
-                 (proyekt-run-command (proyekt-lookup-command items name)))))))
+                 (exsequor-run-command (exsequor-lookup-command items name)))))))
 
-(defun proyekt-sources (root)
+(defun exsequor-sources (root)
   (let ((default-directory root))
     (thread-last
-      proyekt-cache
-      (map-apply #'proyekt-make-source)
+      exsequor-cache
+      (map-apply #'exsequor-make-source)
       (seq-filter #'identity))))
 
-(defun proyekt-sources-global ()
+(defun exsequor-sources-global ()
   (thread-last
-    proyekt-cache
+    exsequor-cache
     (map-filter (lambda (_name command-set) (plist-get command-set :global)))
-    (map-apply #'proyekt-make-source)
+    (map-apply #'exsequor-make-source)
     (seq-filter #'identity)))
 
 ;;;###autoload
-(defun proyekt-run ()
+(defun exsequor-run-inp-project ()
   (interactive)
   (let ((root (if-let* ((project (project-current)))
                   (project-root project)
                 default-directory)))
-    (consult--multi (proyekt-sources root)
+    (consult--multi (exsequor-sources root)
                     :sort nil
-                    :keymap proyekt-minibuffer-map
-                    :predicate #'proyekt--candidate-visible-p)))
+                    :keymap exsequor-minibuffer-map
+                    :predicate #'exsequor--candidate-visible-p)))
 
 ;;;###autoload
-(defun proyekt-run-global ()
+(defun exsequor-run-global ()
   (interactive)
-  (consult--multi (proyekt-sources-global)
+  (consult--multi (exsequor-sources-global)
                   :sort nil
-                  :keymap proyekt-minibuffer-map
-                  :predicate #'proyekt--candidate-visible-p))
+                  :keymap exsequor-minibuffer-map
+                  :predicate #'exsequor--candidate-visible-p))
 
-(proyekt-add-command-set
+(exsequor-add-command-set
  "Gentoo overlay"
  :items '((:name "scan for QA issues" :action "pkgcheck scan")
           (:name "update manifests" :action "pkgdev manifest"))
@@ -201,7 +201,7 @@
             (executable-find "pkgdev"))
         (file-regular-p "profiles/repo_name"))))
 
-(proyekt-add-command-set
+(exsequor-add-command-set
  "Node scripts"
  :items-fn
  (lambda ()
@@ -222,9 +222,9 @@
    (and (executable-find "npm")
         (file-regular-p "package.json"))))
 
-(proyekt-add-command-set
+(exsequor-add-command-set
  "Just"
- :items-fn #'proyekt--just-parse-recipes
+ :items-fn #'exsequor--just-parse-recipes
  :predicate
  (lambda ()
    (and (executable-find "just")
@@ -233,9 +233,9 @@
             (file-regular-p ".justfile")
             (file-regular-p "justfile")))))
 
-(proyekt-add-command-set
+(exsequor-add-command-set
  "Just (global)"
- :items-fn (lambda () (proyekt--just-parse-recipes "--global-justfile"))
+ :items-fn (lambda () (exsequor--just-parse-recipes "--global-justfile"))
  :global t
  :predicate
  (lambda ()
@@ -248,7 +248,7 @@
           "~/justfile"
           "~/.justfile")))))
 
-(proyekt-add-command-set
+(exsequor-add-command-set
  "Cargo"
  :items '((:name "build" :action "cargo build")
           (:name "test" :action "cargo test")
@@ -264,7 +264,7 @@
    (and (executable-find "cargo")
         (file-regular-p "Cargo.toml"))))
 
-(proyekt-add-command-set
+(exsequor-add-command-set
  "Mix"
  :items '((:name "build" :action "mix compile")
           (:name "test" :action "mix test")
@@ -286,7 +286,7 @@
         (file-regular-p "mix.exs"))))
 
 
-(proyekt-add-command-set
+(exsequor-add-command-set
  "Cask"
  :items '((:name "build" :action "cask build")
           (:name "install depencencies" :action "cask install")
@@ -306,7 +306,7 @@
    (and (executable-find "cask")
         (file-regular-p "Cask"))))
 
-(proyekt-add-command-set
+(exsequor-add-command-set
  "Bundle"
  :items '((:name "install dependencies" :action "bundle install")
           (:name "update dependencies" :action "bundle update")
@@ -316,7 +316,7 @@
    (and (executable-find "bundle")
         (file-regular-p "Gemfile"))) )
 
-(proyekt-add-command-set
+(exsequor-add-command-set
  "NPM"
  :items '((:name "test" :action "npm test")
           (:name "update depencencies" :action "npm update")
@@ -341,7 +341,7 @@
    (and (executable-find "npm")
         (file-regular-p "package.json"))))
 
-(proyekt-add-command-set
+(exsequor-add-command-set
  "Yarn"
  :items '((:name "install dependencies" :action "yarn --no-emoji --no-progress")
           (:name "update depencencies" :action "yarn upgrade --no-emoji --no-progress")
@@ -365,7 +365,7 @@
    (and (executable-find "yarn")
         (file-regular-p "yarn.lock"))))
 
-(proyekt-add-command-set
+(exsequor-add-command-set
  "Sorbet"
  :items '((:name "check types" :action "srb typecheck"))
  :predicate
@@ -373,7 +373,7 @@
    (and (executable-find "srb")
         (file-regular-p "sorbet/config"))))
 
-(defun proyekt--rake-parse-tasks (&rest flags)
+(defun exsequor--rake-parse-tasks (&rest flags)
   (let* ((cmd (string-join (append '("rake" "--all" "--tasks") flags) " "))
          (flag-str (if flags (concat " " (string-join flags " ")) "")))
     (seq-map
@@ -391,9 +391,9 @@
       (lambda (line) (string-prefix-p "rake " line))
       (string-lines (shell-command-to-string cmd) t)))))
 
-(proyekt-add-command-set
+(exsequor-add-command-set
  "Rake"
- :items-fn #'proyekt--rake-parse-tasks
+ :items-fn #'exsequor--rake-parse-tasks
  :predicate
  (lambda ()
    (and (executable-find "rake")
@@ -402,15 +402,15 @@
             (file-regular-p "Rakefile.rb")
             (file-regular-p "rakefile.rb")))))
 
-(proyekt-add-command-set
+(exsequor-add-command-set
  "Rake (global)"
- :items-fn (lambda () (proyekt--rake-parse-tasks "--system"))
+ :items-fn (lambda () (exsequor--rake-parse-tasks "--system"))
  :global t
  :predicate
  (lambda ()
    (and (executable-find "rake")
         (file-expand-wildcards "~/.rake/*.rake"))))
 
-(provide 'proyekt)
+(provide 'exsequor)
 
-;;; proyekt.el ends here
+;;; exsequor.el ends here
