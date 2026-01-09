@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        emacs-version: ['30.1', 'snapshot']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: purcell/setup-emacs@master
+        with:
+          version: ${{ matrix.emacs-version }}
+
+      - uses: emacs-eldev/setup-eldev@v1
+
+      - name: Install dependencies
+        run: eldev prepare
+
+      - name: Check formatting
+        run: |
+          eldev exec "\
+          (progn \
+            (require 'rx) \
+            (require 'seq) \
+            (require 'subr-x) \
+            (require 'buttercup nil 'noerror) \
+            \
+            (defun format--hidden-path-p (path) \
+              (string-match-p (rx string-start \".\" (+ (not \"/\"))) \
+                              (file-relative-name path default-directory))) \
+            \
+            (defun format--el-files () \
+              (seq-remove \
+               #'format--hidden-path-p \
+               (directory-files-recursively default-directory (rx \".el\" string-end) nil))) \
+            \
+            (let ((inhibit-message t) \
+                  (make-backup-files nil) \
+                  (files (format--el-files))) \
+              (seq-do #'load-file files) \
+              (seq-do \
+               (lambda (file) \
+                 (let ((enable-local-variables nil) \
+                       (enable-local-eval nil)) \
+                   (with-current-buffer (find-file-noselect file) \
+                     (let ((indent-tabs-mode nil)) \
+                       (indent-region (point-min) (point-max))) \
+                     (save-buffer) \
+                     (kill-buffer (current-buffer))))) \
+               files) \
+              (kill-emacs 0)))"
+          git diff --exit-code
+
+      - name: Compile
+        run: eldev compile --force-all --warnings-as-errors --keep-going
